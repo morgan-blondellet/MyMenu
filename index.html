@@ -207,6 +207,13 @@ dialog::backdrop { background: rgba(12, 18, 14, .55); }
 .pick:hover { border-color: var(--accent); }
 .pick .meta { font-size: 0.8rem; color: var(--muted); }
 
+.import-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.import-box p { margin: 0; }
+.import-box ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.bm { cursor: grab; background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.draft-note { background: var(--accent-soft); color: var(--ink); border-radius: 8px; padding: 8px 12px; font-size: 0.88rem; margin: 0; }
+.source a { color: var(--accent); }
+
 #toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 0.9rem; z-index: 50; max-width: calc(100% - 32px); }
 @media (prefers-reduced-motion: no-preference) {
   .card, .slot, .btn, .chip { transition: border-color .15s, background-color .15s; }
@@ -234,7 +241,10 @@ dialog::backdrop { background: rgba(12, 18, 14, .55); }
         <h2>Recettes</h2>
         <p id="season-line"></p>
       </div>
-      <button class="btn primary" data-act="new-recipe">+ Nouvelle recette</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn" data-act="import">Importer depuis un site</button>
+        <button class="btn primary" data-act="new-recipe">+ Nouvelle recette</button>
+      </div>
     </div>
     <div class="filters">
       <div class="row">
@@ -798,6 +808,7 @@ function recipeView(id, servings) {
       <ul class="ing-list">${(r.ingredients || []).map(raw => { const x = parseIng(raw); return `<li><span class="q">${esc(x.q != null ? fmtQty(Math.round(x.q * factor * 100) / 100, x.u) : x.u)}</span><span>${esc(x.n || raw)}</span></li>`; }).join('')}</ul>
       ${steps.length ? `<h3>Préparation</h3><ol class="steps">${steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>` : ''}
       ${r.notes ? `<h3>Notes</h3><p style="margin:0;white-space:pre-wrap">${esc(r.notes)}</p>` : ''}
+      ${safeUrl(r.source) ? `<p class="small source" style="margin:0">Source : <a href="${esc(r.source)}" target="_blank" rel="noopener">${esc(hostOf(r.source))} ↗</a></p>` : ''}
       <div><h3 style="margin-bottom:8px">Ajouter au menu de la semaine ${isoWeek(S.monday).w}</h3>${slotGrid(id, p)}</div>
     </div>
     <div class="dlg-foot"><button class="btn danger left" data-act="del-recipe" data-id="${esc(id)}">Supprimer</button><button class="btn" data-act="edit-recipe" data-id="${esc(id)}">Modifier</button><button class="btn primary" data-act="close">Fermer</button></div>
@@ -813,12 +824,16 @@ function slotGrid(id, p) {
     }).join('')}`).join('')}</div>`;
 }
 
-function recipeForm(id) {
-  const r = id ? recipeById(id) : { name: '', category: 'Plat', servings: 4, prep: '', cook: '', seasons: [NOW_SEASON], ingredients: [], steps: '', notes: '' };
+function recipeForm(id, draft) {
+  const r = id ? recipeById(id) : (draft || { name: '', category: 'Plat', servings: 4, prep: '', cook: '', seasons: [NOW_SEASON], ingredients: [], steps: '', notes: '' });
   const cats = Array.from(new Set(CATEGORIES.concat(r.category ? [r.category] : [])));
+  const note = draft ? (draft.via === 'claude'
+    ? 'Recette extraite par Claude depuis le texte de la page. Vérifiez les quantités et les saisons, puis enregistrez.'
+    : 'Recette lue dans les métadonnées de la page. ' + (draft.seasons.length ? 'Les saisons sont devinées d’après les ingrédients : vérifiez-les.' : 'Cochez les saisons si la recette n’est pas de toute l’année.')) : '';
   openDialog(`<form class="dlg" id="recipe-form" autocomplete="off">
-    <div class="dlg-head"><h2>${id ? 'Modifier la recette' : 'Nouvelle recette'}</h2><button type="button" class="icon-btn" data-act="close" aria-label="Fermer">×</button></div>
+    <div class="dlg-head"><h2>${id ? 'Modifier la recette' : draft ? 'Vérifier la recette importée' : 'Nouvelle recette'}</h2><button type="button" class="icon-btn" data-act="close" aria-label="Fermer">×</button></div>
     <div class="dlg-body">
+      ${note ? `<p class="draft-note">${esc(note)}</p>` : ''}
       <div class="form-grid">
         <div class="field span4"><label for="rf-name">Nom</label><input class="input" id="rf-name" required value="${esc(r.name)}" placeholder="Velouté de potimarron"></div>
         <div class="field span2"><label for="rf-cat">Catégorie</label><select class="input" id="rf-cat">${cats.map(c => `<option${c === r.category ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
@@ -834,7 +849,8 @@ function recipeForm(id) {
         <span class="small muted">Écrivez la quantité, l’unité puis l’ingrédient. Voici comment c’est compris :</span>
         <div class="parse-wrap"><table class="parse-table" id="rf-parse"></table></div></div>
       <div class="field"><label for="rf-steps">Étapes, une par ligne</label><textarea class="input" id="rf-steps" rows="5">${esc(r.steps || '')}</textarea></div>
-      <div class="field"><label for="rf-notes">Notes</label><textarea class="input" id="rf-notes" rows="2" placeholder="Variantes, astuces, source…">${esc(r.notes || '')}</textarea></div>
+      <div class="field"><label for="rf-notes">Notes</label><textarea class="input" id="rf-notes" rows="2" placeholder="Variantes, astuces…">${esc(r.notes || '')}</textarea></div>
+      <div class="field"><label for="rf-source">Source (lien)</label><input class="input" id="rf-source" type="url" value="${esc(r.source || '')}" placeholder="https://…"></div>
     </div>
     <div class="dlg-foot"><button type="button" class="btn" data-act="${id ? 'open-recipe' : 'close'}" data-id="${esc(id || '')}">Annuler</button><button type="submit" class="btn primary">Enregistrer</button></div>
   </form>`);
@@ -881,6 +897,245 @@ function renderPickList() {
     : `<p class="muted" style="margin:0">${S.recipes.length ? 'Aucune recette pour ce filtre.' : 'Aucune recette enregistrée. Créez-en une pour commencer.'}</p>`;
 }
 
+/* ---------- Import depuis un site ---------- */
+const safeUrl = u => (/^https?:\/\/[^\s"<>]+$/i.test(String(u || '').trim()) ? String(u).trim() : '');
+const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } };
+let sampleFn = null;
+(async () => { try { sampleFn = (window.claude && window.claude.use) ? await window.claude.use('sample') : null; } catch (e) { sampleFn = null; } })();
+
+/* Le favori : exécuté sur la page de la recette, il lit le schema.org/Recipe et le copie. */
+function mymenuGrab() {
+  function isR(o) { var t = o && o['@type']; return t === 'Recipe' || (Array.isArray(t) && t.indexOf('Recipe') >= 0); }
+  function find(o, d) {
+    if (!o || typeof o !== 'object' || d > 6) return null;
+    if (Array.isArray(o)) { for (var i = 0; i < o.length; i++) { var x = find(o[i], d + 1); if (x) return x; } return null; }
+    if (isR(o)) return o;
+    return find(o['@graph'], d + 1) || find(o.mainEntity, d + 1);
+  }
+  var r = null, s = document.querySelectorAll('script[type="application/ld+json"]');
+  for (var i = 0; i < s.length && !r; i++) { try { r = find(JSON.parse(s[i].textContent), 0); } catch (e) {} }
+  if (!r) {
+    var m = document.querySelector('[itemtype*="schema.org/Recipe"]');
+    if (m) {
+      var g = function (p) { return Array.prototype.map.call(m.querySelectorAll('[itemprop="' + p + '"]'), function (e) { return (e.getAttribute('content') || e.textContent || '').trim(); }); };
+      r = { name: g('name')[0], recipeYield: g('recipeYield')[0], prepTime: g('prepTime')[0], cookTime: g('cookTime')[0], recipeCategory: g('recipeCategory')[0], recipeIngredient: g('recipeIngredient').length ? g('recipeIngredient') : g('ingredients'), recipeInstructions: g('recipeInstructions') };
+    }
+  }
+  if (!r) { alert('MyMenu : aucune recette trouvée dans les métadonnées de cette page. Copiez plutôt le texte de la page (Ctrl+A, Ctrl+C) et collez-le dans MyMenu.'); return; }
+  var t = JSON.stringify({ mymenu: 1, url: location.href, name: r.name, recipeYield: r.recipeYield, prepTime: r.prepTime, cookTime: r.cookTime, totalTime: r.totalTime, recipeCategory: r.recipeCategory, recipeIngredient: r.recipeIngredient || r.ingredients, recipeInstructions: r.recipeInstructions });
+  function ok() { alert('MyMenu : « ' + (r.name || 'recette') + ' » est copiée. Collez-la dans MyMenu → Importer depuis un site.'); }
+  function fb() {
+    var a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select();
+    var done = false; try { done = document.execCommand('copy'); } catch (e) {}
+    a.remove(); if (done) ok(); else prompt('MyMenu : copiez ce texte puis collez-le dans MyMenu', t);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok, fb); else fb();
+}
+const BOOKMARKLET = 'javascript:' + encodeURIComponent('(' + mymenuGrab.toString() + ')()');
+
+function findRecipe(o, d = 0) {
+  if (!o || typeof o !== 'object' || d > 6) return null;
+  if (Array.isArray(o)) { for (const x of o) { const r = findRecipe(x, d + 1); if (r) return r; } return null; }
+  const t = o['@type'];
+  if (o.mymenu || t === 'Recipe' || (Array.isArray(t) && t.includes('Recipe'))) return o;
+  return findRecipe(o['@graph'], d + 1) || findRecipe(o.mainEntity, d + 1);
+}
+function recipeFromText(text) {
+  text = text.trim();
+  if (/^[\[{]/.test(text)) { try { const r = findRecipe(JSON.parse(text)); if (r) return r; } catch (e) {} }
+  if (/<script|itemtype|<html|<div/i.test(text)) {
+    const doc = new DOMParser().parseFromString(text, 'text/html');
+    const canon = doc.querySelector('link[rel="canonical"]') || doc.querySelector('meta[property="og:url"]');
+    const canonUrl = canon ? (canon.getAttribute('href') || canon.getAttribute('content')) : '';
+    for (const s of doc.querySelectorAll('script[type="application/ld+json"]')) {
+      try { const r = findRecipe(JSON.parse(s.textContent)); if (r) return Object.assign({}, r, { url: r.url || canonUrl }); } catch (e) {}
+    }
+    const m = doc.querySelector('[itemtype*="schema.org/Recipe"]');
+    if (m) {
+      const g = p => Array.from(m.querySelectorAll(`[itemprop="${p}"]`)).map(e => (e.getAttribute('content') || e.textContent || '').trim());
+      return { name: g('name')[0], recipeYield: g('recipeYield')[0], prepTime: g('prepTime')[0], cookTime: g('cookTime')[0], recipeCategory: g('recipeCategory')[0], recipeIngredient: g('recipeIngredient').length ? g('recipeIngredient') : g('ingredients'), recipeInstructions: g('recipeInstructions'), url: canonUrl };
+    }
+  }
+  return null;
+}
+function cleanText(s) {
+  if (s == null) return '';
+  const doc = new DOMParser().parseFromString(String(s), 'text/html');
+  return (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
+}
+function isoMin(v) {
+  if (v == null || v === '') return 0;
+  if (typeof v === 'number') return v;
+  const m = String(v).match(/P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/i);
+  if (m && (m[1] || m[2] || m[3])) return (+m[1] || 0) * 1440 + (+m[2] || 0) * 60 + (+m[3] || 0);
+  const h = String(v).match(/(\d+)\s*h/i), mn = String(v).match(/(\d+)\s*min/i);
+  return (h ? +h[1] * 60 : 0) + (mn ? +mn[1] : 0);
+}
+function yieldNum(y) {
+  const list = Array.isArray(y) ? y : [y];
+  for (const x of list) { const m = String(x ?? '').match(/\d+/); if (m) return Math.min(50, Number(m[0])); }
+  return 0;
+}
+function flattenSteps(x, out = []) {
+  if (!x) return out;
+  if (typeof x === 'string') {
+    x.split(/\n+|<br\s*\/?>|<\/p>|<\/li>/i).map(cleanText).filter(Boolean).forEach(s => out.push(s));
+  } else if (Array.isArray(x)) x.forEach(y => flattenSteps(y, out));
+  else if (typeof x === 'object') {
+    if (x.itemListElement) flattenSteps(x.itemListElement, out);
+    else flattenSteps(x.text || x.name || '', out);
+  }
+  return out;
+}
+function mapCategory(c) {
+  const k = norm([].concat(c || []).join(' '));
+  if (/dessert|gateau|patisserie|sucre/.test(k)) return 'Dessert';
+  if (/entree|apero|aperitif/.test(k)) return 'Entrée';
+  if (/soupe|veloute|potage/.test(k)) return 'Soupe';
+  if (/accompagnement/.test(k)) return 'Accompagnement';
+  if (/petit dej|petit-dej|brunch/.test(k)) return 'Petit-déjeuner';
+  if (/gouter/.test(k)) return 'Goûter';
+  return 'Plat';
+}
+const SEASON_PRODUCE = {
+  printemps: 'asperge,petit pois,radis,fraise,rhubarbe,artichaut,feve,epinard,blette',
+  ete: 'tomate,courgette,aubergine,poivron,basilic,peche,abricot,melon,cerise,framboise,concombre,haricot vert,nectarine,myrtille,pasteque',
+  automne: 'potiron,potimarron,courge,butternut,champignon,coing,figue,chataigne,raisin,poire,pomme',
+  hiver: 'poireau,endive,chou,chou-fleur,panais,topinambour,navet,clementine,mandarine,celeri,celeri-rave,mache',
+};
+function guessSeasons(ingredients) {
+  const found = new Set();
+  for (const raw of ingredients) {
+    const k = ingKey(parseIng(raw).n);
+    if (k.startsWith('pomme de terre')) continue;
+    for (const [season, words] of Object.entries(SEASON_PRODUCE)) {
+      if (words.split(',').some(w => { w = singular(norm(w)); return k === w || k.startsWith(w + ' '); })) found.add(season);
+    }
+  }
+  return found.size === 4 ? [] : SEASONS.map(s => s.id).filter(id => found.has(id));
+}
+function fromSchema(o, fallbackUrl) {
+  const ingredients = [].concat(o.recipeIngredient || o.ingredients || []).map(cleanText).filter(Boolean);
+  const prep = isoMin(o.prepTime), cook = isoMin(o.cookTime), total = isoMin(o.totalTime);
+  return {
+    name: cleanText(o.name) || 'Recette importée',
+    category: mapCategory(o.recipeCategory),
+    servings: yieldNum(o.recipeYield) || 4,
+    prep: prep || (!cook && total ? total : '') || '',
+    cook: cook || '',
+    seasons: guessSeasons(ingredients),
+    ingredients,
+    steps: flattenSteps(o.recipeInstructions).join('\n'),
+    notes: '',
+    source: safeUrl(o.url) || safeUrl(fallbackUrl),
+    via: 'meta',
+  };
+}
+async function extractWithClaude(text, url, signal) {
+  const prompt = `Tu reçois le texte brut copié depuis une page web de recette${url ? ' (' + url + ')' : ''}. Extrais la recette principale et réponds uniquement avec un objet JSON de cette forme :
+{"name": "Gratin dauphinois", "servings": 6, "prepMinutes": 20, "cookMinutes": 75, "category": "Accompagnement", "seasons": [], "ingredients": ["1,5 kg de pommes de terre", "50 cl de lait", "2 gousses d'ail"], "steps": ["Éplucher les pommes de terre.", "…"]}
+Règles :
+- category est l'une de : ${CATEGORIES.join(', ')}.
+- seasons contient des valeurs parmi "printemps", "ete", "automne", "hiver" selon les produits de saison principaux, ou [] si la recette se fait toute l'année.
+- chaque ingrédient s'écrit « quantité unité de ingrédient » en français, avec ces unités si possible : g, kg, ml, cl, l, c. à s., c. à c., pincée, gousse, tranche, boîte, sachet, botte.
+- garde les étapes dans l'ordre ; ignore les commentaires, publicités, menus et recettes suggérées du site.
+- si le texte ne contient pas de recette, réponds {"error": "pas de recette"}.
+
+Texte de la page :
+"""
+${text.slice(0, 40000)}
+"""`;
+  const d = await sampleFn.json(prompt, { modelTier: 'quick', signal });
+  if (!d || typeof d !== 'object' || d.error || !Array.isArray(d.ingredients) || !d.ingredients.length) return null;
+  return {
+    name: String(d.name || 'Recette importée').trim(),
+    category: CATEGORIES.includes(d.category) ? d.category : 'Plat',
+    servings: Math.min(50, Number(d.servings) || 4),
+    prep: Number(d.prepMinutes) || '',
+    cook: Number(d.cookMinutes) || '',
+    seasons: (Array.isArray(d.seasons) ? d.seasons : []).filter(s => SEASONS.some(x => x.id === s)),
+    ingredients: d.ingredients.map(x => String(x).trim()).filter(Boolean),
+    steps: [].concat(d.steps || []).map(x => String(x).trim()).filter(Boolean).join('\n'),
+    notes: '',
+    source: safeUrl(url),
+    via: 'claude',
+  };
+}
+function sampleErrText(e) {
+  switch (e && e.code) {
+    case 'cancelled': return 'Extraction arrêtée.';
+    case 'not_granted': case 'sampling_disabled': case 'not_declared': case 'capability_disabled': case 'capability_removed':
+      sampleFn = null; return 'Claude n’est pas disponible ici. Utilisez le bouton MyMenu, ou collez le code source de la page (Ctrl+U puis Ctrl+A, Ctrl+C).';
+    case 'rate_limited': return 'Trop de demandes pour le moment. Réessayez dans un instant.';
+    case 'prompt_too_large': return 'Le texte collé est trop long. Collez seulement la partie qui contient la recette.';
+    case 'invalid_json': case 'empty_completion': return 'La réponse de Claude n’a pas pu être lue. Réessayez.';
+    case 'session_expired': return 'Votre session a expiré : reconnectez-vous à Claude.';
+    default: return 'L’extraction a échoué. Réessayez.';
+  }
+}
+function importDialog() {
+  openDialog(`<div class="dlg">
+    <div class="dlg-head"><div><span class="label">Marmiton, 750g, Cuisine AZ…</span><h2>Importer une recette</h2></div><button class="icon-btn" data-act="close" aria-label="Fermer">×</button></div>
+    <div class="dlg-body">
+      <div class="field"><label for="imp-url">Adresse de la recette</label>
+        <div style="display:flex;gap:8px"><input class="input" id="imp-url" type="url" placeholder="https://www.marmiton.org/recettes/…" autocomplete="off"><a class="btn" id="imp-open" target="_blank" rel="noopener" hidden>Ouvrir ↗</a></div>
+        <span class="small muted">Par sécurité, MyMenu ne peut pas lire un autre site lui-même. Ouvrez la page de la recette, puis récupérez-la avec l’une des deux méthodes ci-dessous.</span></div>
+      <div class="import-box">
+        <h3>Avec le favori « → MyMenu » (ordinateur)</h3>
+        <p class="small muted">Il lit les métadonnées de recette (schema.org) que publient Marmiton et la plupart des sites de cuisine. Rien n’est envoyé nulle part : la recette est simplement copiée.</p>
+        <ol class="small">
+          <li>Une seule fois : glissez ce bouton dans votre barre de favoris <a class="btn sm bm" id="bm-link" href="#">→ MyMenu</a> ou <button type="button" class="btn sm ghost" data-act="copy-bm">copiez son code</button> pour créer le favori à la main (collez-le comme adresse).</li>
+          <li>Sur la page de la recette, cliquez sur le favori : la recette est copiée.</li>
+          <li>Collez-la dans le cadre ci-dessous.</li>
+        </ol>
+      </div>
+      <div class="import-box">
+        <h3>En collant la page</h3>
+        <p class="small muted">Collez ici le résultat du favori, le code source de la page, ou tout son texte (Ctrl+A puis Ctrl+C sur la page)${sampleFn ? ' : Claude en extraira la recette' : ''}.</p>
+        <textarea class="input" id="imp-text" rows="6" placeholder="Collez ici…"></textarea>
+      </div>
+      <p class="small" id="imp-status" role="status" style="margin:0"></p>
+    </div>
+    <div class="dlg-foot"><button class="btn" data-act="close">Annuler</button><button class="btn" data-act="imp-stop" id="imp-stop" hidden>Arrêter</button><button class="btn primary" data-act="imp-run" id="imp-run">Importer</button></div>
+  </div>`);
+  $('#bm-link').href = BOOKMARKLET;
+  const url = $('#imp-url');
+  const syncOpen = () => { const u = safeUrl(url.value); const a = $('#imp-open'); a.hidden = !u; if (u) a.href = u; };
+  url.addEventListener('input', syncOpen);
+  $('#imp-text').addEventListener('paste', () => setTimeout(() => runImport(true), 0));
+  url.focus();
+}
+async function runImport(auto) {
+  const ta = $('#imp-text'), st = $('#imp-status');
+  if (!ta || !st) return;
+  const text = ta.value.trim();
+  const url = $('#imp-url').value.trim();
+  if (!text) { if (!auto) st.textContent = 'Collez d’abord le contenu de la recette dans le cadre (voir les méthodes ci-dessus).'; return; }
+  if (/^https?:\/\/\S+$/i.test(text)) {
+    $('#imp-url').value = text; $('#imp-url').dispatchEvent(new Event('input')); ta.value = '';
+    st.textContent = 'C’est une adresse : ouvrez la page, puis utilisez le favori → MyMenu ou copiez le texte de la page.';
+    return;
+  }
+  const found = recipeFromText(text);
+  if (found) { const d = fromSchema(found, url); if (d.ingredients.length) { recipeForm(null, d); toast('Recette importée : vérifiez puis enregistrez'); return; } }
+  if (auto) { st.textContent = sampleFn ? 'Pas de métadonnées de recette dans ce texte. Cliquez sur « Importer » pour que Claude extraie la recette.' : 'Pas de métadonnées de recette dans ce texte.'; return; }
+  if (!sampleFn) { st.textContent = 'Aucune recette trouvée. Utilisez le favori → MyMenu, ou collez le code source de la page (Ctrl+U puis Ctrl+A, Ctrl+C).'; return; }
+  const ctl = new AbortController(); S.impCtl = ctl;
+  $('#imp-run').disabled = true; $('#imp-stop').hidden = false;
+  st.textContent = 'Claude lit la page et extrait la recette…';
+  try {
+    const d = await extractWithClaude(text, url, ctl.signal);
+    if (!$('#imp-status')) return;
+    if (d) { recipeForm(null, d); toast('Recette extraite : vérifiez puis enregistrez'); }
+    else st.textContent = 'Claude n’a pas trouvé de recette dans ce texte.';
+  } catch (e) {
+    if ($('#imp-status')) $('#imp-status').textContent = sampleErrText(e);
+  } finally {
+    const b = $('#imp-run'); if (b) b.disabled = false;
+    const s = $('#imp-stop'); if (s) s.hidden = true;
+  }
+}
+
 /* ---------- Toast ---------- */
 let toastT;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 3200); }
@@ -903,12 +1158,20 @@ document.addEventListener('click', async e => {
   if (seasonChip) { S.filters.season = seasonChip.dataset.season; renderRecipes(); return; }
   const pickSeason = e.target.closest('[data-pick-season]');
   if (pickSeason) { S.pick.season = pickSeason.dataset.pickSeason; renderPickList(); return; }
+  if (e.target.closest('#bm-link')) { e.preventDefault(); toast('Glissez ce bouton vers votre barre de favoris (ne cliquez pas dessus ici).'); return; }
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const act = el.dataset.act;
   const week = getWeek();
   switch (act) {
-    case 'close': closeDialog(); break;
+    case 'close': if (S.impCtl) S.impCtl.abort(); closeDialog(); break;
+    case 'import': importDialog(); break;
+    case 'imp-run': runImport(false); break;
+    case 'imp-stop': if (S.impCtl) S.impCtl.abort(); break;
+    case 'copy-bm':
+      try { await navigator.clipboard.writeText(BOOKMARKLET); toast('Code copié. Créez un favori et collez ce code comme adresse (URL).'); }
+      catch (err) { const st = $('#imp-status'); st.innerHTML = '<span>Copiez ce code et utilisez-le comme adresse d’un nouveau favori :</span><input class="input" id="bm-code" readonly>'; $('#bm-code').value = BOOKMARKLET; $('#bm-code').select(); }
+      break;
     case 'new-recipe': recipeForm(null); break;
     case 'open-recipe': if (el.dataset.id) recipeView(el.dataset.id); else closeDialog(); break;
     case 'edit-recipe': recipeForm(el.dataset.id); break;
@@ -1020,6 +1283,7 @@ document.addEventListener('submit', async e => {
       ingredients: $('#rf-ing').value.split('\n').map(s => s.trim()).filter(Boolean),
       steps: $('#rf-steps').value.trim(),
       notes: $('#rf-notes').value.trim(),
+      source: safeUrl($('#rf-source').value.trim()),
       createdAt: old && old.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
