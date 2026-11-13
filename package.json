@@ -1,0 +1,13 @@
+{
+  "name": "mymenu",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Recettes, menus de la semaine et liste de courses",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

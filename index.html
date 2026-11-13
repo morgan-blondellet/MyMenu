@@ -195,10 +195,6 @@ dialog::backdrop { background: rgba(12, 18, 14, .55); }
 .pick:hover { border-color: var(--accent); }
 .pick .meta { font-size: 0.8rem; color: var(--muted); }
 
-.import-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
-.import-box p { margin: 0; }
-.import-box ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
-.bm { cursor: grab; background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 .draft-note { background: var(--accent-soft); color: var(--ink); border-radius: 8px; padding: 8px 12px; font-size: 0.88rem; margin: 0; }
 .source a { color: var(--accent); }
 
@@ -220,7 +216,7 @@ dialog::backdrop { background: rgba(12, 18, 14, .55); }
 </header>
 
 <main class="wrap">
-  <div id="local-note" class="notice" hidden style="margin-bottom:16px">Mode hors ligne : vos données sont enregistrées dans ce navigateur uniquement.</div>
+  <div id="local-note" class="notice" hidden style="margin-bottom:16px">Vos données sont enregistrées dans ce navigateur uniquement.</div>
 
   <!-- RECETTES -->
   <section class="view" id="view-recettes">
@@ -815,9 +811,7 @@ function slotGrid(id, p) {
 function recipeForm(id, draft) {
   const r = id ? recipeById(id) : (draft || { name: '', category: 'Plat', servings: 4, prep: '', cook: '', seasons: [NOW_SEASON], ingredients: [], steps: '', notes: '' });
   const cats = Array.from(new Set(CATEGORIES.concat(r.category ? [r.category] : [])));
-  const note = draft ? (draft.via === 'claude'
-    ? 'Recette extraite par Claude depuis le texte de la page. Vérifiez les quantités et les saisons, puis enregistrez.'
-    : 'Recette lue dans les métadonnées de la page. ' + (draft.seasons.length ? 'Les saisons sont devinées d’après les ingrédients : vérifiez-les.' : 'Cochez les saisons si la recette n’est pas de toute l’année.')) : '';
+  const note = draft ? 'Recette lue dans les métadonnées de la page. ' + (draft.seasons.length ? 'Les saisons sont devinées d’après les ingrédients : vérifiez-les.' : 'Cochez les saisons si la recette n’est pas de toute l’année.') : '';
   openDialog(`<form class="dlg" id="recipe-form" autocomplete="off">
     <div class="dlg-head"><h2>${id ? 'Modifier la recette' : draft ? 'Vérifier la recette importée' : 'Nouvelle recette'}</h2><button type="button" class="icon-btn" data-act="close" aria-label="Fermer">×</button></div>
     <div class="dlg-body">
@@ -885,41 +879,11 @@ function renderPickList() {
     : `<p class="muted" style="margin:0">${S.recipes.length ? 'Aucune recette pour ce filtre.' : 'Aucune recette enregistrée. Créez-en une pour commencer.'}</p>`;
 }
 
-/* ---------- Import depuis un site ---------- */
+/* ---------- Import depuis une adresse ----------
+   Le navigateur ne peut pas lire un autre site (CORS) : la page est téléchargée
+   par le serveur MyMenu (server.js, route api/extract), puis analysée ici. */
 const safeUrl = u => (/^https?:\/\/[^\s"<>]+$/i.test(String(u || '').trim()) ? String(u).trim() : '');
 const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return u; } };
-let sampleFn = null;
-(async () => { try { sampleFn = (window.claude && window.claude.use) ? await window.claude.use('sample') : null; } catch (e) { sampleFn = null; } })();
-
-/* Le favori : exécuté sur la page de la recette, il lit le schema.org/Recipe et le copie. */
-function mymenuGrab() {
-  function isR(o) { var t = o && o['@type']; return t === 'Recipe' || (Array.isArray(t) && t.indexOf('Recipe') >= 0); }
-  function find(o, d) {
-    if (!o || typeof o !== 'object' || d > 6) return null;
-    if (Array.isArray(o)) { for (var i = 0; i < o.length; i++) { var x = find(o[i], d + 1); if (x) return x; } return null; }
-    if (isR(o)) return o;
-    return find(o['@graph'], d + 1) || find(o.mainEntity, d + 1);
-  }
-  var r = null, s = document.querySelectorAll('script[type="application/ld+json"]');
-  for (var i = 0; i < s.length && !r; i++) { try { r = find(JSON.parse(s[i].textContent), 0); } catch (e) {} }
-  if (!r) {
-    var m = document.querySelector('[itemtype*="schema.org/Recipe"]');
-    if (m) {
-      var g = function (p) { return Array.prototype.map.call(m.querySelectorAll('[itemprop="' + p + '"]'), function (e) { return (e.getAttribute('content') || e.textContent || '').trim(); }); };
-      r = { name: g('name')[0], recipeYield: g('recipeYield')[0], prepTime: g('prepTime')[0], cookTime: g('cookTime')[0], recipeCategory: g('recipeCategory')[0], recipeIngredient: g('recipeIngredient').length ? g('recipeIngredient') : g('ingredients'), recipeInstructions: g('recipeInstructions') };
-    }
-  }
-  if (!r) { alert('MyMenu : aucune recette trouvée dans les métadonnées de cette page. Copiez plutôt le texte de la page (Ctrl+A, Ctrl+C) et collez-le dans MyMenu.'); return; }
-  var t = JSON.stringify({ mymenu: 1, url: location.href, name: r.name, recipeYield: r.recipeYield, prepTime: r.prepTime, cookTime: r.cookTime, totalTime: r.totalTime, recipeCategory: r.recipeCategory, recipeIngredient: r.recipeIngredient || r.ingredients, recipeInstructions: r.recipeInstructions });
-  function ok() { alert('MyMenu : « ' + (r.name || 'recette') + ' » est copiée. Collez-la dans MyMenu → Importer depuis un site.'); }
-  function fb() {
-    var a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select();
-    var done = false; try { done = document.execCommand('copy'); } catch (e) {}
-    a.remove(); if (done) ok(); else prompt('MyMenu : copiez ce texte puis collez-le dans MyMenu', t);
-  }
-  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(ok, fb); else fb();
-}
-const BOOKMARKLET = 'javascript:' + encodeURIComponent('(' + mymenuGrab.toString() + ')()');
 
 function findRecipe(o, d = 0) {
   if (!o || typeof o !== 'object' || d > 6) return null;
@@ -1019,108 +983,50 @@ function fromSchema(o, fallbackUrl) {
     via: 'meta',
   };
 }
-async function extractWithClaude(text, url, signal) {
-  const prompt = `Tu reçois le texte brut copié depuis une page web de recette${url ? ' (' + url + ')' : ''}. Extrais la recette principale et réponds uniquement avec un objet JSON de cette forme :
-{"name": "Gratin dauphinois", "servings": 6, "prepMinutes": 20, "cookMinutes": 75, "category": "Accompagnement", "seasons": [], "ingredients": ["1,5 kg de pommes de terre", "50 cl de lait", "2 gousses d'ail"], "steps": ["Éplucher les pommes de terre.", "…"]}
-Règles :
-- category est l'une de : ${CATEGORIES.join(', ')}.
-- seasons contient des valeurs parmi "printemps", "ete", "automne", "hiver" selon les produits de saison principaux, ou [] si la recette se fait toute l'année.
-- chaque ingrédient s'écrit « quantité unité de ingrédient » en français, avec ces unités si possible : g, kg, ml, cl, l, c. à s., c. à c., pincée, gousse, tranche, boîte, sachet, botte.
-- garde les étapes dans l'ordre ; ignore les commentaires, publicités, menus et recettes suggérées du site.
-- si le texte ne contient pas de recette, réponds {"error": "pas de recette"}.
-
-Texte de la page :
-"""
-${text.slice(0, 40000)}
-"""`;
-  const d = await sampleFn.json(prompt, { modelTier: 'quick', signal });
-  if (!d || typeof d !== 'object' || d.error || !Array.isArray(d.ingredients) || !d.ingredients.length) return null;
-  return {
-    name: String(d.name || 'Recette importée').trim(),
-    category: CATEGORIES.includes(d.category) ? d.category : 'Plat',
-    servings: Math.min(50, Number(d.servings) || 4),
-    prep: Number(d.prepMinutes) || '',
-    cook: Number(d.cookMinutes) || '',
-    seasons: (Array.isArray(d.seasons) ? d.seasons : []).filter(s => SEASONS.some(x => x.id === s)),
-    ingredients: d.ingredients.map(x => String(x).trim()).filter(Boolean),
-    steps: [].concat(d.steps || []).map(x => String(x).trim()).filter(Boolean).join('\n'),
-    notes: '',
-    source: safeUrl(url),
-    via: 'claude',
-  };
-}
-function sampleErrText(e) {
-  switch (e && e.code) {
-    case 'cancelled': return 'Extraction arrêtée.';
-    case 'not_granted': case 'sampling_disabled': case 'not_declared': case 'capability_disabled': case 'capability_removed':
-      sampleFn = null; return 'Claude n’est pas disponible ici. Utilisez le bouton MyMenu, ou collez le code source de la page (Ctrl+U puis Ctrl+A, Ctrl+C).';
-    case 'rate_limited': return 'Trop de demandes pour le moment. Réessayez dans un instant.';
-    case 'prompt_too_large': return 'Le texte collé est trop long. Collez seulement la partie qui contient la recette.';
-    case 'invalid_json': case 'empty_completion': return 'La réponse de Claude n’a pas pu être lue. Réessayez.';
-    case 'session_expired': return 'Votre session a expiré : reconnectez-vous à Claude.';
-    default: return 'L’extraction a échoué. Réessayez.';
+function recipeFromExtract(data) {
+  for (const block of (data.jsonld || [])) {
+    try { const r = findRecipe(JSON.parse(block)); if (r) return r; } catch (e) {}
   }
+  return data.html ? recipeFromText(data.html) : null;
 }
 function importDialog() {
-  openDialog(`<div class="dlg">
-    <div class="dlg-head"><div><span class="label">Marmiton, 750g, Cuisine AZ…</span><h2>Importer une recette</h2></div><button class="icon-btn" data-act="close" aria-label="Fermer">×</button></div>
+  openDialog(`<form class="dlg" id="import-form" autocomplete="off">
+    <div class="dlg-head"><div><span class="label">Marmiton, 750g, Cuisine AZ…</span><h2>Importer une recette</h2></div><button type="button" class="icon-btn" data-act="close" aria-label="Fermer">×</button></div>
     <div class="dlg-body">
       <div class="field"><label for="imp-url">Adresse de la recette</label>
-        <div style="display:flex;gap:8px"><input class="input" id="imp-url" type="url" placeholder="https://www.marmiton.org/recettes/…" autocomplete="off"><a class="btn" id="imp-open" target="_blank" rel="noopener" hidden>Ouvrir ↗</a></div>
-        <span class="small muted">Par sécurité, MyMenu ne peut pas lire un autre site lui-même. Ouvrez la page de la recette, puis récupérez-la avec l’une des deux méthodes ci-dessous.</span></div>
-      <div class="import-box">
-        <h3>Avec le favori « → MyMenu » (ordinateur)</h3>
-        <p class="small muted">Il lit les métadonnées de recette (schema.org) que publient Marmiton et la plupart des sites de cuisine. Rien n’est envoyé nulle part : la recette est simplement copiée.</p>
-        <ol class="small">
-          <li>Une seule fois : glissez ce bouton dans votre barre de favoris <a class="btn sm bm" id="bm-link" href="#">→ MyMenu</a> ou <button type="button" class="btn sm ghost" data-act="copy-bm">copiez son code</button> pour créer le favori à la main (collez-le comme adresse).</li>
-          <li>Sur la page de la recette, cliquez sur le favori : la recette est copiée.</li>
-          <li>Collez-la dans le cadre ci-dessous.</li>
-        </ol>
-      </div>
-      <div class="import-box">
-        <h3>En collant la page</h3>
-        <p class="small muted">Collez ici le résultat du favori, le code source de la page, ou tout son texte (Ctrl+A puis Ctrl+C sur la page)${sampleFn ? ' : Claude en extraira la recette' : ''}.</p>
-        <textarea class="input" id="imp-text" rows="6" placeholder="Collez ici…"></textarea>
-      </div>
+        <input class="input" id="imp-url" type="url" required placeholder="https://www.marmiton.org/recettes/…"></div>
+      <p class="small muted" style="margin:0">MyMenu lit les métadonnées de recette (schema.org) que publient la plupart des sites de cuisine, puis vous laisse vérifier avant d’enregistrer.</p>
       <p class="small" id="imp-status" role="status" style="margin:0"></p>
     </div>
-    <div class="dlg-foot"><button class="btn" data-act="close">Annuler</button><button class="btn" data-act="imp-stop" id="imp-stop" hidden>Arrêter</button><button class="btn primary" data-act="imp-run" id="imp-run">Importer</button></div>
-  </div>`);
-  $('#bm-link').href = BOOKMARKLET;
-  const url = $('#imp-url');
-  const syncOpen = () => { const u = safeUrl(url.value); const a = $('#imp-open'); a.hidden = !u; if (u) a.href = u; };
-  url.addEventListener('input', syncOpen);
-  $('#imp-text').addEventListener('paste', () => setTimeout(() => runImport(true), 0));
-  url.focus();
+    <div class="dlg-foot"><button type="button" class="btn" data-act="close">Annuler</button><button type="submit" class="btn primary" id="imp-run">Importer</button></div>
+  </form>`);
+  $('#imp-url').focus();
 }
-async function runImport(auto) {
-  const ta = $('#imp-text'), st = $('#imp-status');
-  if (!ta || !st) return;
-  const text = ta.value.trim();
-  const url = $('#imp-url').value.trim();
-  if (!text) { if (!auto) st.textContent = 'Collez d’abord le contenu de la recette dans le cadre (voir les méthodes ci-dessus).'; return; }
-  if (/^https?:\/\/\S+$/i.test(text)) {
-    $('#imp-url').value = text; $('#imp-url').dispatchEvent(new Event('input')); ta.value = '';
-    st.textContent = 'C’est une adresse : ouvrez la page, puis utilisez le favori → MyMenu ou copiez le texte de la page.';
-    return;
-  }
-  const found = recipeFromText(text);
-  if (found) { const d = fromSchema(found, url); if (d.ingredients.length) { recipeForm(null, d); toast('Recette importée : vérifiez puis enregistrez'); return; } }
-  if (auto) { st.textContent = sampleFn ? 'Pas de métadonnées de recette dans ce texte. Cliquez sur « Importer » pour que Claude extraie la recette.' : 'Pas de métadonnées de recette dans ce texte.'; return; }
-  if (!sampleFn) { st.textContent = 'Aucune recette trouvée. Utilisez le favori → MyMenu, ou collez le code source de la page (Ctrl+U puis Ctrl+A, Ctrl+C).'; return; }
-  const ctl = new AbortController(); S.impCtl = ctl;
-  $('#imp-run').disabled = true; $('#imp-stop').hidden = false;
-  st.textContent = 'Claude lit la page et extrait la recette…';
+async function runImport() {
+  const st = $('#imp-status'), btn = $('#imp-run');
+  const url = safeUrl($('#imp-url').value);
+  if (!url) { st.textContent = 'Saisissez une adresse complète, commençant par https://'; return; }
+  btn.disabled = true; st.textContent = 'Lecture de la page…';
   try {
-    const d = await extractWithClaude(text, url, ctl.signal);
+    let res;
+    try { res = await fetch('api/extract?url=' + encodeURIComponent(url), { headers: { accept: 'application/json' } }); }
+    catch (e) { throw new Error('no_server'); }
+    const isJson = (res.headers.get('content-type') || '').includes('application/json');
+    if (!isJson) throw new Error('no_server');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Le site n’a pas pu être lu.');
+    const found = recipeFromExtract(data);
+    const d = found && fromSchema(found, data.url || url);
+    if (!d || !d.ingredients.length) throw new Error('Aucune recette trouvée dans les métadonnées de cette page. Saisissez-la avec « Nouvelle recette ».');
     if (!$('#imp-status')) return;
-    if (d) { recipeForm(null, d); toast('Recette extraite : vérifiez puis enregistrez'); }
-    else st.textContent = 'Claude n’a pas trouvé de recette dans ce texte.';
+    recipeForm(null, d); toast('Recette importée : vérifiez puis enregistrez');
   } catch (e) {
-    if ($('#imp-status')) $('#imp-status').textContent = sampleErrText(e);
+    const msg = e.message === 'no_server'
+      ? 'L’import par adresse a besoin du serveur MyMenu (server.js), qui n’est pas joignable ici.'
+      : e.message;
+    if ($('#imp-status')) $('#imp-status').textContent = msg;
   } finally {
-    const b = $('#imp-run'); if (b) b.disabled = false;
-    const s = $('#imp-stop'); if (s) s.hidden = true;
+    const b2 = $('#imp-run'); if (b2) b2.disabled = false;
   }
 }
 
@@ -1146,20 +1052,13 @@ document.addEventListener('click', async e => {
   if (seasonChip) { S.filters.season = seasonChip.dataset.season; renderRecipes(); return; }
   const pickSeason = e.target.closest('[data-pick-season]');
   if (pickSeason) { S.pick.season = pickSeason.dataset.pickSeason; renderPickList(); return; }
-  if (e.target.closest('#bm-link')) { e.preventDefault(); toast('Glissez ce bouton vers votre barre de favoris (ne cliquez pas dessus ici).'); return; }
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const act = el.dataset.act;
   const week = getWeek();
   switch (act) {
-    case 'close': if (S.impCtl) S.impCtl.abort(); closeDialog(); break;
+    case 'close': closeDialog(); break;
     case 'import': importDialog(); break;
-    case 'imp-run': runImport(false); break;
-    case 'imp-stop': if (S.impCtl) S.impCtl.abort(); break;
-    case 'copy-bm':
-      try { await navigator.clipboard.writeText(BOOKMARKLET); toast('Code copié. Créez un favori et collez ce code comme adresse (URL).'); }
-      catch (err) { const st = $('#imp-status'); st.innerHTML = '<span>Copiez ce code et utilisez-le comme adresse d’un nouveau favori :</span><input class="input" id="bm-code" readonly>'; $('#bm-code').value = BOOKMARKLET; $('#bm-code').select(); }
-      break;
     case 'new-recipe': recipeForm(null); break;
     case 'open-recipe': if (el.dataset.id) recipeView(el.dataset.id); else closeDialog(); break;
     case 'edit-recipe': recipeForm(el.dataset.id); break;
@@ -1248,6 +1147,7 @@ function addIngFilter() {
 
 document.addEventListener('submit', async e => {
   e.preventDefault();
+  if (e.target.id === 'import-form') { runImport(); return; }
   if (e.target.id === 'add-form') {
     const v = $('#add-item').value.trim(); if (!v) return;
     const p = parseIng(v);
