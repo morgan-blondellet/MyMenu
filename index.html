@@ -6,36 +6,24 @@
 <style>
 /* Layout: sticky header with three tabs (Recettes / Menu / Courses); one centered column, cards only for recipes and meal slots. */
 :root {
-  --bg: #f4f6f1;
-  --surface: #ffffff;
-  --surface-2: #eaefe5;
-  --ink: #1c2620;
-  --muted: #5a685e;
-  --line: #d6ded0;
-  --accent: #2c6a46;
-  --accent-ink: #ffffff;
-  --accent-soft: #dbeadf;
-  --danger: #b23a2b;
-  --spring: #4a9a3c;
-  --summer: #d0522c;
-  --autumn: #b9740f;
-  --winter: #3d6c9c;
+  /* Ardoise et safran : thème sombre permanent */
+  --bg: #13171e;
+  --surface: #1b212a;
+  --surface-2: #242b36;
+  --ink: #e6e9ee;
+  --muted: #93a0b0;
+  --line: #2d3643;
+  --accent: #e5b440;
+  --accent-ink: #1a1505;
+  --accent-soft: #332c1a;
+  --danger: #ef8270;
+  --spring: #9cc98c;
+  --summer: #ef8a6a;
+  --autumn: #e7a64c;
+  --winter: #86b2e6;
   --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --radius: 10px;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #111612; --surface: #19201b; --surface-2: #212a23; --ink: #e5ebe4; --muted: #98a69b;
-    --line: #2e3931; --accent: #7cc596; --accent-ink: #0e1a12; --accent-soft: #1d3325; --danger: #ef8270;
-    --spring: #8acb7c; --summer: #f08a66; --autumn: #e3a74a; --winter: #86aedb;
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #111612; --surface: #19201b; --surface-2: #212a23; --ink: #e5ebe4; --muted: #98a69b;
-  --line: #2e3931; --accent: #7cc596; --accent-ink: #0e1a12; --accent-soft: #1d3325; --danger: #ef8270;
-  --spring: #8acb7c; --summer: #f08a66; --autumn: #e3a74a; --winter: #86aedb;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -60,7 +48,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .brand span { color: var(--muted); font-size: 0.8rem; }
 .tabs { display: flex; gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 999px; }
 .tabs a { text-decoration: none; color: var(--muted); padding: 6px 14px; border-radius: 999px; font-weight: 500; font-size: 0.92rem; display: flex; gap: 6px; align-items: center; }
-.tabs a[aria-current="page"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.tabs a[aria-current="page"] { background: var(--bg); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.4); }
 .tabs .count { font-size: 0.75rem; background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 0 7px; font-variant-numeric: tabular-nums; }
 
 main { padding-block: 24px 64px; }
